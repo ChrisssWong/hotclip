@@ -906,6 +906,8 @@ export interface HotClipApi {
   ) => Promise<DetectHighlightsResult>;
   /** Cut the selected highlights into mp4 files; resolves with the file list. */
   exportClips: (filePath: string, clips: HighlightCandidate[], options?: ExportOptions) => Promise<ExportedClip[]>;
+  /** Export full original transcript directly to a standalone UTF-8 .srt file without video encoding. */
+  exportSrtOnly: (filePath: string, transcript: Transcript) => Promise<{ path: string; cues: number } | null>;
   /** Subscribe to per-clip export progress; returns an unsubscribe function. */
   onExportProgress: (cb: (p: ExportProgressEvent) => void) => () => void;
   /** 取消进行中的导出(会中断正在跑的 ffmpeg;已完成的切片保留)。 */

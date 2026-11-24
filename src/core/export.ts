@@ -151,11 +151,35 @@ export interface ExportClipSpec {
 const OPENING_HOOK_SEC = 2.2;
 
 /**
- * 抽峰值轨的最大跨度。拼接片的跨度可能横跨几十分钟(「前后打脸」的两段本来
- * 就隔得远),整段解码抽峰值又慢又没用——超过这个跨度就不抽,跳剪的静音门
- * 和智能封面各自按既有 fail-open 路径退化(与"提取失败"完全同一条分支)。
+ * 抽峰值轨的最大跨度。支持到 60 分钟（16kHz s16le 约 115MB，远低于 256MB buffer 上限），
+ * 覆盖 5～30 分钟中长口播整片去气口；超长拼接跨度仍按既有 fail-open 退化。
  */
-export const PEAK_SPAN_MAX_SEC = 300;
+export const PEAK_SPAN_MAX_SEC = 3600;
+
+/**
+ * 将长区间按 VAD 单次上限（默认 180s）切块，让 5～60 分钟整片精剪也能获得完整
+ * Silero VAD 语音保护，同时不改动单次 VAD 窗口的安全上限。总时长超 maxTotalSec 返回空。
+ */
+export function chunkSpeechRanges(
+  ranges: Array<{ startSec: number; endSec: number }>,
+  maxChunkSec = 180,
+  maxTotalSec = 3600
+): Array<{ startSec: number; endSec: number }> {
+  const chunks: Array<{ startSec: number; endSec: number }> = [];
+  let total = 0;
+  for (const r of ranges) {
+    if (!Number.isFinite(r.startSec) || !Number.isFinite(r.endSec) || r.endSec <= r.startSec) continue;
+    total += r.endSec - r.startSec;
+    if (total > maxTotalSec) return [];
+    let cursor = r.startSec;
+    while (cursor < r.endSec - 1e-3) {
+      const next = Math.min(r.endSec, cursor + maxChunkSec);
+      chunks.push({ startSec: cursor, endSec: next });
+      cursor = next;
+    }
+  }
+  return chunks;
+}
 
 function peakSpanTooLong(clip: { startSec: number; endSec: number }): boolean {
   return clip.endSec - clip.startSec > PEAK_SPAN_MAX_SEC;
@@ -662,9 +686,10 @@ export async function exportClips(
       let speechAnchorEnd: number | undefined;
       let speechActivity: ClipRenderOutcome["speechActivity"];
       if (options.jumpCut && options.modelsRoot && clip.words && clip.words.length > 0 && srcInfo?.hasAudio !== false) {
-        const speechRanges = stitched
+        const rawSpeechRanges = stitched
           ? pieces.map((piece) => ({ startSec: piece.startSec, endSec: piece.endSec }))
           : [{ startSec: Math.max(0, clip.startSec - 0.8), endSec: clip.endSec + 0.8 }];
+        const speechRanges = chunkSpeechRanges(rawSpeechRanges);
         let detected: SpeechActivitySpan[] | null = null;
         if (speechRanges.length > 0 && speechRanges.every((range) => speechActivityRangeSupported(range.startSec, range.endSec))) {
           detected = [];
@@ -1433,8 +1458,8 @@ export async function exportClips(
       ).then(() => true, () => false);
 
       // SRT 字幕文件:与烧录字幕同一套词/断行/时间基(跳剪重映射后),
-      // 平台原生字幕上传与二次精修用
-      if (options.subtitleFile && wantCaptions) {
+      // 平台原生字幕上传与二次精修用;关闭烧录硬字幕时也必须照常写出 SRT。
+      if (options.subtitleFile && captionWords && captionWords.length > 0) {
         // cold-open 后正片词整体后移;qa 修复裁头则整体前移
         const shift = (coldOpenSec ?? 0) - headTrimSec;
         let relWords = captionWords!.map((w) => ({

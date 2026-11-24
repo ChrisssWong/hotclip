@@ -650,6 +650,11 @@ const browserMock: HotClipApi = {
   openUrl(url) {
     window.open(url, "_blank", "noreferrer");
   },
+  async exportSrtOnly(filePath, transcript) {
+    await sleep(120);
+    const stem = (filePath.split(/[\\/]/).pop() ?? "subtitles").replace(/\.[^.]+$/, "");
+    return { path: `/demo/${stem}.srt`, cues: transcript.segments.length };
+  },
   async detectHighlights(transcript, _llm, _filePath, diarize, prefilter, vision, _length, products, referencePath, _genre, _brief, scan): Promise<DetectHighlightsResult> {
     await sleep(1500);
     // 浏览器预览:给了参考视频就演示一份画像

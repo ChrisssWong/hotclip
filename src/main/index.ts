@@ -9,7 +9,7 @@ import type { SpeechRunOptions, AlignmentRequest, AlignmentPreview } from "../sh
  */
 import { app, shell, BrowserWindow, ipcMain, dialog, protocol } from "electron";
 import { join } from "path";
-import { basename, extname } from "path";
+import { basename, dirname, extname } from "path";
 import { stat, readFile, writeFile, readdir } from "fs/promises";
 import { createReadStream } from "fs";
 import { randomUUID } from "crypto";
@@ -85,6 +85,7 @@ import { isClipLength, normalizeMaxClips } from "../shared/detection-options";
 import type { DetectionOptions } from "../shared/api-types";
 import type { ReferenceProfile } from "@core/reference";
 import { exportClips, sanitizeFilename } from "@core/export";
+import { buildSrt, srtLinesFromWords } from "@core/srt";
 import { ExportTaskRunner, optionalExportStep } from "@core/export-task";
 import { exportNeedsTranscript } from "../shared/export-transcript";
 import { sliceWords } from "@core/subtitle";
@@ -996,6 +997,36 @@ async function diarizeTranscript(t: Transcript, filePath: string): Promise<Trans
 const exportTasks = new ExportTaskRunner();
 ipcMain.on("hotclip:export-cancel", () => exportTasks.cancel());
 app.on("before-quit", () => exportTasks.cancel());
+
+ipcMain.handle("hotclip:export-srt-only", async (_event, filePath: unknown, transcript: unknown) => {
+  const t = transcript as Transcript | null | undefined;
+  if (!t || !Array.isArray(t.segments) || t.segments.length === 0) {
+    throw new Error("export-srt-only requires a non-empty transcript");
+  }
+  const allWords: TranscriptWord[] = t.segments
+    .flatMap((seg) =>
+      Array.isArray(seg.words) && seg.words.length > 0
+        ? seg.words
+        : seg.text?.trim()
+          ? [{ text: seg.text.trim(), startSec: seg.startSec, endSec: seg.endSec }]
+          : []
+    )
+    .sort((a, b) => a.startSec - b.startSec);
+  if (allWords.length === 0) throw new Error("transcript contains no subtitle text");
+  const lines = srtLinesFromWords(allWords, [], [], { readability: true, endSec: t.durationSec });
+  const srt = buildSrt(lines);
+  if (!srt.trim()) throw new Error("generated SRT is empty");
+  const validPath = typeof filePath === "string" && filePath.trim().length > 0;
+  const stem = validPath ? sanitizeFilename(basename(filePath, extname(filePath)), "subtitles") : "subtitles";
+  const defaultDir = validPath ? dirname(filePath) : app.getPath("documents");
+  const result = await dialog.showSaveDialog({
+    defaultPath: join(defaultDir, `${stem}.srt`),
+    filters: [{ name: "SubRip Subtitle", extensions: ["srt"] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  await writeFile(result.filePath, srt, "utf8");
+  return { path: result.filePath, cues: lines.length };
+});
 
 /** 一条候选实际要用的词表:拼接片只取落在各段内的词,单段照旧按区间取。 */
 function clipWords(transcript: Transcript, c: HighlightCandidate): TranscriptWord[] {

@@ -72,6 +72,8 @@ interface SessionState {
   paramsDirty: boolean;
 
   exporting: { clips: HighlightCandidate[]; options: RenderToggles } | null;
+  /** 精剪模式下在逐句稿中手动划删的句子 id（不修改原始转写缓存，随时可恢复）。 */
+  excludedSegmentIds: Set<number>;
   /** Human edits only; AI/transcription setters establish a fresh baseline. */
   editHistory: SessionEditHistory;
 
@@ -83,6 +85,9 @@ interface SessionState {
   patchCandidate: (id: number, patch: Partial<HighlightCandidate>) => void;
   addCandidate: (candidate: HighlightCandidate) => void;
   editTranscript: (transcript: Transcript) => void;
+  toggleExcludeSegment: (id: number) => void;
+  setExcludedSegments: (ids: number[], excluded: boolean) => void;
+  clearExcludedSegments: () => void;
   setSelected: (ids: Set<number>) => void;
   toggleSelected: (id: number) => void;
   undoEdit: () => void;
@@ -116,10 +121,11 @@ export const useSession = create<SessionState>((set, get) => ({
   referencePath: null,
   paramsDirty: false,
   exporting: null,
+  excludedSegmentIds: new Set<number>(),
   editHistory: emptySessionEditHistory(),
 
   setFile: (file) => set({ file }),
-  setTranscript: (transcript) => set({ transcript, editHistory: emptySessionEditHistory() }),
+  setTranscript: (transcript) => set({ transcript, excludedSegmentIds: new Set<number>(), editHistory: emptySessionEditHistory() }),
   setAuto: (auto) => set({ auto }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setCandidates: (candidates) => set({ candidates, editHistory: emptySessionEditHistory() }),
@@ -165,6 +171,23 @@ export const useSession = create<SessionState>((set, get) => ({
     if (changes.length === 0) return;
     set({ transcript, editHistory: appendSessionEdit(state.editHistory, { kind: "transcript-update", changes }) });
   },
+  toggleExcludeSegment: (id) =>
+    set((state) => {
+      const next = new Set(state.excludedSegmentIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { excludedSegmentIds: next };
+    }),
+  setExcludedSegments: (ids, excluded) =>
+    set((state) => {
+      const next = new Set(state.excludedSegmentIds);
+      for (const id of ids) {
+        if (excluded) next.add(id);
+        else next.delete(id);
+      }
+      return { excludedSegmentIds: next };
+    }),
+  clearExcludedSegments: () => set({ excludedSegmentIds: new Set<number>() }),
   setSelected: (selected) => set({ selected }),
   toggleSelected: (id) => {
     const state = get();
@@ -203,6 +226,7 @@ export const useSession = create<SessionState>((set, get) => ({
       referencePath: checkpoint.referencePath,
       paramsDirty: checkpoint.paramsDirty,
       exporting: null,
+      excludedSegmentIds: new Set<number>(),
       editHistory: checkpoint.editHistory ? compactSessionEditHistory(checkpoint.editHistory) : emptySessionEditHistory(),
     });
   },
@@ -221,6 +245,7 @@ export const useSession = create<SessionState>((set, get) => ({
       referencePath: null,
       paramsDirty: false,
       exporting: null,
+      excludedSegmentIds: new Set<number>(),
       editHistory: emptySessionEditHistory(),
     }),
 }));

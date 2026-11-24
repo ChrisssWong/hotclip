@@ -6,11 +6,12 @@ import { AlignmentReview } from "./AlignmentReview";
  * 与旧 TranscribeView 结果态同一套逻辑,但住进工作台面板,不再是独占一屏。
  */
 import { useMemo, useState } from "react";
-import { LuBookOpen, LuPencil, LuReplaceAll, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuBookOpen, LuPencil, LuReplaceAll, LuScissors, LuTriangleAlert, LuUndo2, LuX } from "react-icons/lu";
 import { useT } from "../../i18n/store";
 import { getApi } from "../../api/provider";
 import { useSession } from "../../stores/session-store";
 import { editSegmentText } from "../../../../shared/edit-transcript";
+import { summarizeRoughCut } from "../../../../shared/rough-cut";
 import { summarizeTimingQuality } from "../../../../shared/transcript-quality";
 import { searchVisualEvidence, type VisualEvidenceNote } from "../../../../shared/evidence-search";
 import { evidenceContext, evidenceResults, nextEvidenceIndex, type EvidenceSource } from "../../../../shared/evidence-navigation";
@@ -36,9 +37,9 @@ function formatClock(totalSeconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition, onPick }: { transcript: Transcript; visualNotes?: readonly VisualEvidenceNote[]; onSeek: (sec: number) => void; onAudition: (start: number, end: number) => void; onPick: (segmentIds: number[]) => void }): React.JSX.Element {
+export function TranscriptPanel({ transcript, visualNotes, roughCutMode = false, onSeek, onAudition, onPick }: { transcript: Transcript; visualNotes?: readonly VisualEvidenceNote[]; roughCutMode?: boolean; onSeek: (sec: number) => void; onAudition: (start: number, end: number) => void; onPick: (segmentIds: number[]) => void }): React.JSX.Element {
   const t = useT("transcribe");
-  const { editTranscript } = useSession();
+  const { editTranscript, excludedSegmentIds, toggleExcludeSegment, setExcludedSegments, clearExcludedSegments } = useSession();
   const [editingSeg, setEditingSeg] = useState<number | null>(null);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [pending, setPending] = useState<{ entry: GlossaryEntry; count: number } | null>(null);
@@ -229,11 +230,60 @@ export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition, o
           </button>
         </div>
       )}
+      {roughCutMode && (() => {
+        const stats = summarizeRoughCut(transcript, excludedSegmentIds);
+        const pickedList = [...selectedIds];
+        return (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line/60 bg-panel-2/40 px-3 py-2 text-[11.5px]">
+            <span className="font-semibold text-fg/90">
+              {t("roughCutStats", {
+                kept: stats.keptSegments,
+                total: stats.totalSegments,
+                cut: stats.excludedSegments,
+                sec: Math.round(stats.excludedDurationSec),
+              })}
+            </span>
+            {pickedList.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { setExcludedSegments(pickedList, true); setSelectedIds(new Set()); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[11px] font-semibold text-red-300 hover:border-red-400"
+                >
+                  <LuScissors className="h-3 w-3" />
+                  {t("excludeSelected", { n: pickedList.length })}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setExcludedSegments(pickedList, false); setSelectedIds(new Set()); }}
+                  className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[11px] font-semibold text-mut hover:border-mut hover:text-fg"
+                >
+                  <LuUndo2 className="h-3 w-3" />
+                  {t("restoreSelected")}
+                </button>
+              </>
+            )}
+            {stats.excludedSegments > 0 && (
+              <button
+                type="button"
+                onClick={clearExcludedSegments}
+                className="inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300 hover:border-amber-400"
+              >
+                <LuUndo2 className="h-3 w-3" />
+                {t("restoreAllExcluded", { n: stats.excludedSegments })}
+              </button>
+            )}
+            <span className="ml-auto hidden text-[11px] text-mut xl:inline">{t("roughCutTip")}</span>
+          </div>
+        );
+      })()}
       {visibleSegments.length === 0 && results.length === 0 && <p className="p-4 text-sm text-mut" role="status">{similarMode ? t("searchSimilarEmpty") : t("searchEmpty")}</p>}
       <VirtualTranscriptList segments={visibleSegments} targetId={hit?.segmentIds.find((id) => !showTimingReview || timingReviewIds.has(id))} targetKey={`${query}:${activeHit}`} pinnedId={editingSeg} label={t("searchResults")}>
-        {(seg) => (
-          <div key={seg.id} className={`group/seg flex items-baseline gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-panel-2 ${hit?.segmentIds.includes(seg.id) ? "bg-ember/10" : ""}`}>
-            {alignmentOpen && <input type="checkbox" aria-label={t("alignSelectSentence", { n: seg.id })} checked={selectedIds.has(seg.id)} onChange={() => setSelectedIds((previous) => { const next = new Set(previous); if (next.has(seg.id)) next.delete(seg.id); else next.add(seg.id); return next; })} />}
+        {(seg) => {
+          const excluded = roughCutMode && excludedSegmentIds.has(seg.id);
+          return (
+          <div key={seg.id} className={`group/seg flex items-baseline gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-panel-2 ${hit?.segmentIds.includes(seg.id) ? "bg-ember/10" : ""} ${excluded ? "bg-red-500/5 opacity-55" : ""}`}>
+            {(alignmentOpen || roughCutMode) && <input type="checkbox" aria-label={t("alignSelectSentence", { n: seg.id })} checked={selectedIds.has(seg.id)} onChange={() => setSelectedIds((previous) => { const next = new Set(previous); if (next.has(seg.id)) next.delete(seg.id); else next.add(seg.id); return next; })} />}
             <button
               type="button"
               onClick={() => onSeek(seg.startSec)}
@@ -256,8 +306,13 @@ export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition, o
                 className="w-full rounded-lg border border-ember/60 bg-panel px-2 py-0.5 text-[13px] leading-relaxed outline-none"
               />
             ) : (
-              <p className="flex min-w-0 items-baseline gap-1.5 text-[13px] leading-relaxed">
-                <span className="min-w-0 break-words">{(() => { const range = hit?.ranges.find((r) => r.segmentId === seg.id); return range ? <>{seg.text.slice(0, range.start)}<mark className="rounded bg-amber-400/25 text-inherit">{seg.text.slice(range.start, range.end)}</mark>{seg.text.slice(range.end)}</> : seg.text; })()}</span>
+              <p className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[13px] leading-relaxed">
+                <span className={`min-w-0 break-words ${excluded ? "line-through decoration-red-400/80" : ""}`}>{(() => { const range = hit?.ranges.find((r) => r.segmentId === seg.id); return range ? <>{seg.text.slice(0, range.start)}<mark className="rounded bg-amber-400/25 text-inherit">{seg.text.slice(range.start, range.end)}</mark>{seg.text.slice(range.end)}</> : seg.text; })()}</span>
+                {excluded && (
+                  <span className="shrink-0 rounded border border-red-400/40 bg-red-500/10 px-1 py-0.5 text-[9px] font-semibold text-red-300">
+                    {t("excludedBadge")}
+                  </span>
+                )}
                 {seg.glossaryApplied && (
                   <span title={t("glossaryFixedHint")} className="chip shrink-0 rounded px-1 py-0.5 text-[9px] text-ember">
                     {t("glossaryFixedBadge")}
@@ -276,10 +331,26 @@ export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition, o
                 >
                   <LuPencil className="h-3 w-3" />
                 </button>
+                {roughCutMode && (
+                  <button
+                    type="button"
+                    title={excluded ? t("restoreSeg") : t("excludeSeg")}
+                    aria-label={excluded ? t("restoreSeg") : t("excludeSeg")}
+                    onClick={() => toggleExcludeSegment(seg.id)}
+                    className={`ml-auto shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                      excluded
+                        ? "border-amber-400/50 bg-amber-500/15 text-amber-300 hover:border-amber-300"
+                        : "border-transparent text-mut opacity-45 group-hover/seg:border-line group-hover/seg:opacity-100 hover:border-red-400/50 hover:text-red-300"
+                    }`}
+                  >
+                    {excluded ? <LuUndo2 className="h-3 w-3" /> : <LuScissors className="h-3 w-3" />}
+                  </button>
+                )}
               </p>
             )}
           </div>
-        )}
+          );
+        }}
       </VirtualTranscriptList>
       {glossaryOpen && <GlossaryModal onClose={() => setGlossaryOpen(false)} />}
     </div>

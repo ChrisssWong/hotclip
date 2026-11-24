@@ -19,6 +19,7 @@ import { CandidateTable } from "./workbench/CandidateTable";
 import { TranscriptPanel } from "./workbench/TranscriptPanel";
 import { Inspector } from "./workbench/Inspector";
 import { ExportBar } from "./workbench/ExportBar";
+import { RoughCutBar } from "./workbench/RoughCutBar";
 import { ExportPanel } from "./workbench/ExportPanel";
 import { TranscribeView } from "./TranscribeView";
 import { ExportView } from "./ExportView";
@@ -27,6 +28,7 @@ import { TranscriptPickModal } from "./TranscriptPickModal";
 import { BrandStyleModal } from "./BrandStyleModal";
 import { WatchFolderModal } from "./WatchFolderModal";
 import { clipDurationSec } from "../../../shared/pieces";
+import { buildRoughCutCandidate } from "../../../shared/rough-cut";
 import { resolveWorkbenchShortcut } from "../keyboard-shortcuts";
 import type { ClipPiece, HighlightCandidate, ReviewedCandidate, SessionEditCommand } from "../../../shared/api-types";
 
@@ -198,6 +200,8 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
   const llmReady = !isElectron() || isLlmReady(config);
   const atlasReady = /atlascloud\.ai/i.test(config.baseUrl ?? "") && Boolean(config.apiKey);
   const durationSec = transcript?.durationSec || file?.durationSec || 0;
+  const roughCutMode = prefs.workflowMode === "roughcut";
+  const activeTab = roughCutMode ? "transcript" : tab;
 
   const seek = useCallback((sec: number): void => {
     // 每次都换一个极小抖动的值,同一时刻连点两次也能触发 effect
@@ -205,8 +209,10 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
   }, []);
 
   // 首次自动检测:转写完成 + LLM 就绪 + 还没有候选 → 跑一轮(每份逐句稿只触发一次)
+  // 精剪字幕模式下完全跳过 AI 找爆点，免配置 LLM、零云端消耗。
   const detectedFor = useRef<unknown>(null);
   useEffect(() => {
+    if (roughCutMode) return;
     if (!transcript || candidates !== null || detecting || !llmReady) return;
     // Importing reviewed subtitles first opens the transcript. AI analysis is
     // an explicit next step; selecting a subtitle file must not spend LLM quota.
@@ -214,12 +220,12 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
     if (detectedFor.current === transcript) return;
     detectedFor.current = transcript;
     void run();
-  }, [transcript, candidates, detecting, llmReady, auto, run]);
+  }, [roughCutMode, transcript, candidates, detecting, llmReady, auto, run]);
 
   // 托管:候选落地即按当前偏好把「建议发」全部出片
   const autoExported = useRef(false);
   useEffect(() => {
-    if (!auto || autoExported.current || !candidates) return;
+    if (roughCutMode || !auto || autoExported.current || !candidates) return;
     const publishable = candidates.filter((c) => c.recommended && (c.gate === undefined || c.gate === "publish"));
     if (publishable.length === 0) return;
     autoExported.current = true;
@@ -335,6 +341,37 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
     });
   }, [prefs, config, brandState, atlasReady]);
 
+  const startRoughCutExport = useCallback((): void => {
+    const s = useSession.getState();
+    if (!s.file || !s.transcript) return;
+    const roughClip = buildRoughCutCandidate(s.transcript, durationSec, s.excludedSegmentIds, displayName(s.file.path));
+    if (!roughClip) return;
+    const base = buildRenderToggles({ prefs, config, brandState, diarize: s.diarize, transcript: s.transcript, atlasReady: false });
+    s.setExporting({
+      clips: [roughClip],
+      options: {
+        ...base,
+        vertical: false,
+        gameCamera: undefined,
+        captionStyle: prefs.roughCutCaptionStyle,
+        trimUi: false,
+        titleCard: false,
+        openingHook: false,
+        coldOpen: false,
+        flashForward: false,
+        autoZoom: false,
+        alsoLandscape: false,
+        compilation: false,
+        subtitleFile: true,
+        publishCopy: undefined,
+        variants: undefined,
+        aiCover: undefined,
+        publishPack: undefined,
+        seriesPack: false,
+      },
+    });
+  }, [durationSec, prefs, config, brandState]);
+
   if (!file) return <></>;
 
   return (
@@ -372,42 +409,48 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
                 }}
                 onPrevCandidate={() => stepCandidate(-1)}
                 onNextCandidate={() => stepCandidate(1)}
-                compact={tab === "transcript"}
+                compact={activeTab === "transcript"}
                 transportCommand={transportCommand}
               />
-              {(tab !== "transcript" || showTranscriptTimeline) && <Timeline
+              {(activeTab !== "transcript" || showTranscriptTimeline) && <Timeline
                 filePath={file.path}
                 durationSec={durationSec}
-                candidates={candidates}
-                focusedId={focusedId}
+                candidates={roughCutMode ? null : candidates}
+                focusedId={roughCutMode ? null : focusedId}
                 currentSec={currentSec}
                 onFocus={focusCandidate}
                 onSeek={seek}
               />}
               {/* 候选 / 逐句稿 页签 */}
               <div className="review-toolbar">
-                {(
-                  [
-                    ["candidates", t("tabCandidates")],
-                    ["transcript", t("tabTranscript")],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setTab(key)}
-                    aria-pressed={tab === key} data-desk-tab=""
-                    className={`rounded-lg px-3 py-1.5 text-[11.5px] font-bold transition-colors ${
-                      tab === key ? "bg-ember/12 text-ember" : "text-mut hover:text-fg"
-                    }`}
-                  >
-                    {label}
-                    {key === "candidates" && candidates && <span className="ml-1.5 font-mono text-[10px] tabular-nums">{candidates.length}</span>}
-                  </button>
-                ))}
-                {tab === "transcript" && <button type="button" aria-pressed={showTranscriptTimeline} onClick={() => setShowTranscriptTimeline((v) => !v)} className="rounded border border-line px-2 py-1.5 text-xs text-mut">{t("toggleTranscriptTimeline")}</button>}
+                {roughCutMode ? (
+                  <span className="rounded-lg bg-ember/12 px-3 py-1.5 text-[11.5px] font-bold text-ember">
+                    {t("tabTranscript")}
+                  </span>
+                ) : (
+                  (
+                    [
+                      ["candidates", t("tabCandidates")],
+                      ["transcript", t("tabTranscript")],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setTab(key)}
+                      aria-pressed={tab === key} data-desk-tab=""
+                      className={`rounded-lg px-3 py-1.5 text-[11.5px] font-bold transition-colors ${
+                        tab === key ? "bg-ember/12 text-ember" : "text-mut hover:text-fg"
+                      }`}
+                    >
+                      {label}
+                      {key === "candidates" && candidates && <span className="ml-1.5 font-mono text-[10px] tabular-nums">{candidates.length}</span>}
+                    </button>
+                  ))
+                )}
+                {activeTab === "transcript" && <button type="button" aria-pressed={showTranscriptTimeline} onClick={() => setShowTranscriptTimeline((v) => !v)} className="rounded border border-line px-2 py-1.5 text-xs text-mut">{t("toggleTranscriptTimeline")}</button>}
                 <div className="min-w-0 flex-1 px-2">
-                  <StatsLine />
+                  {!roughCutMode && <StatsLine />}
                 </div>
                 <div className="flex shrink-0 items-center gap-1" title={t("shortcutHint")}>
                   {(() => {
@@ -443,18 +486,20 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
                     );
                   })()}
                 </div>
-                <button
-                  type="button"
-                  title={th("pickHint")}
-                  onClick={() => { setPickInitialIds([]); setShowPick(true); }}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap text-mut transition-colors hover:border-mut hover:text-fg"
-                >
-                  <LuTextSelect className="h-3 w-3" />
-                  {th("pickButton")}
-                </button>
+                {!roughCutMode && (
+                  <button
+                    type="button"
+                    title={th("pickHint")}
+                    onClick={() => { setPickInitialIds([]); setShowPick(true); }}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap text-mut transition-colors hover:border-mut hover:text-fg"
+                  >
+                    <LuTextSelect className="h-3 w-3" />
+                    {th("pickButton")}
+                  </button>
+                )}
               </div>
-              {tab === "transcript" ? (
-                <TranscriptPanel transcript={transcript} visualNotes={stats.vision?.notes} onSeek={seek} onPick={(ids) => { setPickInitialIds(ids); setShowPick(true); }} onAudition={(startSec, endSec) => setTransportCommand((previous) => ({ id: (previous?.id ?? 0) + 1, action: "audition", startSec, endSec }))} />
+              {activeTab === "transcript" ? (
+                <TranscriptPanel transcript={transcript} visualNotes={stats.vision?.notes} roughCutMode={roughCutMode} onSeek={seek} onPick={(ids) => { setPickInitialIds(ids); setShowPick(true); }} onAudition={(startSec, endSec) => setTransportCommand((previous) => ({ id: (previous?.id ?? 0) + 1, action: "audition", startSec, endSec }))} />
               ) : !llmReady ? (
                 // LLM 未配置:指路设置中心(配置本体已移到那里)
                 <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/70 p-6 text-center">
@@ -508,12 +553,14 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
           )}
         </div>
 
-        {transcript && tab !== "transcript" && <Inspector transcript={transcript} onRedetect={() => void run()} onOpenReview={setReviewId} />}
+        {transcript && activeTab !== "transcript" && <Inspector transcript={transcript} onRedetect={() => void run()} onOpenReview={setReviewId} />}
       </div>
 
-      {transcript && candidates && candidates.length > 0 && (
+      {transcript && roughCutMode ? (
+        <RoughCutBar defaultOutDir={defaultOutDir} durationSec={durationSec} onExportVideo={startRoughCutExport} />
+      ) : transcript && candidates && candidates.length > 0 ? (
         <ExportBar defaultOutDir={defaultOutDir} onExport={startExport} onOpenPanel={() => setShowExportPanel(true)} />
-      )}
+      ) : null}
 
       {/* ---- 导出进行中:中央覆盖层(候选保留在 store,出完直接回来) ---- */}
       {exporting && transcript && (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeFilename, clipFilename, summarizeEdit, buildChapters } from "../export";
+import { sanitizeFilename, clipFilename, summarizeEdit, buildChapters, chunkSpeechRanges, PEAK_SPAN_MAX_SEC } from "../export";
 import { buildConcatList, buildConcatArgs } from "../cut";
 
 describe("summarizeEdit", () => {
@@ -86,5 +86,24 @@ describe("精华合集 (concat + chapters)", () => {
         { title: "z", durationSec: 1 },
       ]).split("\n")[2]
     ).toBe("1:00:01 z");
+  });
+});
+
+describe("中长视频精剪支持 (chunkSpeechRanges + PEAK_SPAN_MAX_SEC)", () => {
+  it("PEAK_SPAN_MAX_SEC 至少覆盖 30 分钟中长视频", () => {
+    expect(PEAK_SPAN_MAX_SEC).toBeGreaterThanOrEqual(1800);
+  });
+
+  it("将超过 180 秒的长区间自动切分为合法 VAD 窗口块", () => {
+    const chunks = chunkSpeechRanges([{ startSec: 0, endSec: 500 }], 180, 3600);
+    expect(chunks).toEqual([
+      { startSec: 0, endSec: 180 },
+      { startSec: 180, endSec: 360 },
+      { startSec: 360, endSec: 500 },
+    ]);
+  });
+
+  it("总时长超过上限时返回空以回退既有逻辑", () => {
+    expect(chunkSpeechRanges([{ startSec: 0, endSec: 4000 }], 180, 3600)).toEqual([]);
   });
 });

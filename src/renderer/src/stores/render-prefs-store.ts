@@ -15,7 +15,13 @@ import { episodeStructure, type EpisodeStructure } from "../../../shared/episode
 
 const STORAGE_KEY = "hotclip-render-prefs";
 
+/** 工作流模式：clip=短视频切片（AI找爆点+竖屏），roughcut=整片原画幅精剪+字幕（免AI）。 */
+export type WorkflowMode = "clip" | "roughcut";
+
 export interface RenderPrefs {
+  workflowMode: WorkflowMode;
+  /** 精剪字幕模式的硬字幕选择：默认 none（仅出对齐 SRT，不烧录硬字幕），与切片模式互不干扰。 */
+  roughCutCaptionStyle: CaptionStyleChoice;
   episode: EpisodeStructure | null;
   vertical: boolean;
   gameCameraEnabled: boolean;
@@ -94,6 +100,8 @@ export interface RenderPrefs {
 
 /** 与出厂默认一致:开箱即出竖屏卡拉OK跳剪片;花钱/额外文件的默认关。 */
 export const RENDER_PREF_DEFAULTS: RenderPrefs = {
+  workflowMode: "clip",
+  roughCutCaptionStyle: "none",
   episode: null,
   vertical: true,
   gameCameraEnabled: false,
@@ -171,6 +179,8 @@ export function normalizeRenderPrefs(p: Partial<RenderPrefs>): RenderPrefs {
   out.maxClips = normalizeMaxClips(out.maxClips);
   if (!["high", "standard", "compact"].includes(out.quality)) out.quality = "high";
   if (!["keyword", "pop", "minimal", "hormozi", "bubble", "karaoke", "none"].includes(out.captionStyle)) out.captionStyle = "keyword";
+  if (!["keyword", "pop", "minimal", "hormozi", "bubble", "karaoke", "none"].includes(out.roughCutCaptionStyle)) out.roughCutCaptionStyle = "none";
+  if (out.workflowMode !== "clip" && out.workflowMode !== "roughcut") out.workflowMode = "clip";
   if (!["off", "volume", "premium"].includes(out.aiCover)) out.aiCover = "off";
   if (!["basic", "smart"].includes(out.denoiseMode)) out.denoiseMode = "basic";
   out.episode = episodeStructure(out.episode) ?? null;

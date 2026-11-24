@@ -41,6 +41,7 @@ const api: HotClipApi = {
   detectHighlights: (transcript, llm, filePath, diarize, prefilter, vision, length, products, referencePath, genre, brief, scan, maxClips) =>
     ipcRenderer.invoke("hotclip:detect-highlights", transcript, llm, filePath, diarize, prefilter, vision, length, products, referencePath, genre, brief, scan, maxClips),
   exportClips: (filePath, clips, options) => ipcRenderer.invoke("hotclip:export-clips", filePath, clips, options),
+  exportSrtOnly: (filePath, transcript) => ipcRenderer.invoke("hotclip:export-srt-only", filePath, transcript),
   onExportProgress: (cb) => {
     const listener = (_e: IpcRendererEvent, p: ExportProgressEvent): void => cb(p);
     ipcRenderer.on("hotclip:export-progress", listener);

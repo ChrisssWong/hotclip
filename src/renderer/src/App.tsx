@@ -25,6 +25,7 @@ import { useT, useLocaleStore } from "./i18n/store";
 import { LOCALE_LIST, REGISTRY } from "./i18n/messages";
 import { getApi } from "./api/provider";
 import { initialSessionCheckpoint, sessionCheckpointFromState, useSession, type ProbedFile } from "./stores/session-store";
+import { useRenderPrefs } from "./stores/render-prefs-store";
 import { LogoMark, LogoWordmark } from "./components/Logo";
 import { EpisodeRecipes } from "./components/EpisodeRecipes";
 import { Workbench } from "./components/Workbench";
@@ -261,6 +262,8 @@ export default function App(): React.JSX.Element {
   const th = useT("home");
   const tp = useT("projects");
   const { locale, setLocale } = useLocaleStore();
+  const { prefs, setPref } = useRenderPrefs();
+  const roughCutMode = prefs.workflowMode === "roughcut";
   const session = useSession();
   const { file, transcript, candidates, detecting, exporting, settingsOpen, auto } = session;
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -497,15 +500,49 @@ export default function App(): React.JSX.Element {
         {file && (
           <nav className="pipeline-nav" style={noDrag}>
             <PipeChip label={t("pipeTranscribe")} state={transcript ? "done" : "busy"} />
-            <PipeChip
-              label={t("pipeDetect")}
-              state={candidates ? "done" : detecting ? "busy" : "idle"}
-              extra={candidates ? t("pipeCandidates", { n: candidates.length }) : undefined}
-            />
+            {roughCutMode ? (
+              <PipeChip label={t("pipeRoughCut")} state={transcript ? "done" : "idle"} />
+            ) : (
+              <PipeChip
+                label={t("pipeDetect")}
+                state={candidates ? "done" : detecting ? "busy" : "idle"}
+                extra={candidates ? t("pipeCandidates", { n: candidates.length }) : undefined}
+              />
+            )}
             <PipeChip label={t("pipeExport")} state={exporting ? "busy" : "idle"} />
           </nav>
         )}
         <div className="flex shrink-0 items-center gap-2" style={noDrag}>
+          {/* 工作流模式切换:切片模式 vs 精剪字幕(免AI、原画幅、文字删句+剪气口+SRT) */}
+          <div
+            role="group"
+            title={t("workflowModeHint")}
+            className="flex items-center rounded-md border border-line bg-panel-2/70 p-0.5 text-[11px] font-semibold"
+          >
+            <button
+              type="button"
+              aria-pressed={!roughCutMode}
+              onClick={() => {
+                if (roughCutMode) setPref({ workflowMode: "clip" });
+              }}
+              className={`rounded px-2 py-1 transition-colors ${!roughCutMode ? "bg-ember/15 text-ember" : "text-mut hover:text-fg"}`}
+            >
+              {t("workflowClip")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={roughCutMode}
+              onClick={() => {
+                if (!roughCutMode) {
+                  session.setAuto(false);
+                  setPref({ workflowMode: "roughcut" });
+                }
+              }}
+              className={`rounded px-2 py-1 transition-colors ${roughCutMode ? "bg-ember/15 text-ember" : "text-mut hover:text-fg"}`}
+            >
+              {t("workflowRoughCut")}
+            </button>
+          </div>
           {update && (
             <button
               type="button"
@@ -517,7 +554,7 @@ export default function App(): React.JSX.Element {
               {tc("updateChip", { v: update.latest })}
             </button>
           )}
-          {file && !auto && !exporting && (
+          {file && !roughCutMode && !auto && !exporting && (
             <button
               type="button"
               title={th("autoRunHint")}
