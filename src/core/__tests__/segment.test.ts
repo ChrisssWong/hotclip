@@ -68,11 +68,9 @@ describe("tokensToWords", () => {
 });
 
 describe("candidateUrls", () => {
-  it("tries mirrors before origin (domestic-first)", () => {
+  it("defaults to official origin only without third-party mirrors", () => {
     const urls = candidateUrls(SENSEVOICE_MODEL);
-    expect(urls.length).toBe(SENSEVOICE_MODEL.mirrors.length + 1);
-    expect(urls[urls.length - 1]).toBe(SENSEVOICE_MODEL.url);
-    expect(urls[0].startsWith(SENSEVOICE_MODEL.mirrors[0])).toBe(true);
+    expect(urls).toEqual([SENSEVOICE_MODEL.url]);
     expect(urls[0]).toContain("github.com");
   });
 });
