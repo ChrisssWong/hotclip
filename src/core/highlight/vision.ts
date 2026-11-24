@@ -283,6 +283,8 @@ class EmptyVisionResponse extends Error {}
 /** 默认研判实现:OpenAI 兼容多模态 chat(Ollama /v1 同样支持 image_url)。 */
 export const visionChatComplete: VisionChatFn = async (llm, system, userText, imageBase64Jpeg, signal, actionCellCount) => {
   const url = `${llm.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const isGemini = /generativelanguage\.googleapis\.com/i.test(llm.baseUrl);
+  const baseMaxTokens = actionCellCount ? Math.max(300, actionCellCount * 60) : 300;
   const res = await requestLlmText(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${llm.apiKey}` },
@@ -299,7 +301,9 @@ export const visionChatComplete: VisionChatFn = async (llm, system, userText, im
         },
       ],
       temperature: chatTemperature(llm.model, 0.2),
-      max_tokens: actionCellCount ? Math.max(300, actionCellCount * 60) : 300,
+      // Gemini 3/4 思考 token 计入 max_tokens:限制为 low 并放宽预算,避免 300 token 被思考耗尽。
+      max_tokens: isGemini ? Math.max(2048, baseMaxTokens) : baseMaxTokens,
+      ...(isGemini ? { reasoning_effort: "low" } : {}),
       ...(actionCellCount ? { response_format: actionResponseFormat(actionCellCount) } : {}),
     }),
   }, { signal, budget: llmRequestBudget(VISION_CALL_TIMEOUT_MS, 1) });

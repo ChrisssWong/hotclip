@@ -3,7 +3,7 @@
  * 用户,只看到 fetch failed 是不知道下一步的——本地/云端要给不同的指引。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chatComplete, MAX_TOKENS, RETRY_MAX_TOKENS, thinkingParams } from "../highlight/detect";
+import { chatComplete, extraParams, MAX_TOKENS, RETRY_MAX_TOKENS, thinkingParams } from "../highlight/detect";
 import { visionChatComplete } from "../highlight/vision";
 
 const OLLAMA = { baseUrl: "http://localhost:11434/v1", apiKey: "", model: "qwen3:8b" };
@@ -216,5 +216,36 @@ describe("chatComplete 空响应处理(issue #8)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(err.message).toContain("空内容");
     expect(err.message).not.toContain("深度思考");
+  });
+});
+
+describe("Google Gemini OpenAI 兼容端点思考参数适配", () => {
+  const GEMINI = {
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    apiKey: "gm-x",
+    model: "gemini-4-hydrogen",
+  };
+
+  it("仅对 Gemini 与 Pollinations 注入 reasoning_effort=low", () => {
+    expect(extraParams(GEMINI.baseUrl)).toEqual({ reasoning_effort: "low" });
+    expect(extraParams(CLOUD.baseUrl)).toEqual({});
+  });
+
+  it("文本与视觉请求为 Gemini 注入 low 思考档并放宽视觉 max_tokens 预算", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => chatResponse({ content: "ok" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(chatComplete(GEMINI, "s", "u")).resolves.toBe("ok");
+    await expect(visionChatComplete(GEMINI, "s", "u", "ZmFrZQ==")).resolves.toBe("ok");
+    await expect(visionChatComplete(CLOUD, "s", "u", "ZmFrZQ==")).resolves.toBe("ok");
+
+    const textBody = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as Record<string, unknown>;
+    const geminiVisionBody = JSON.parse(String(fetchMock.mock.calls[1][1].body)) as Record<string, unknown>;
+    const cloudVisionBody = JSON.parse(String(fetchMock.mock.calls[2][1].body)) as Record<string, unknown>;
+
+    expect(textBody.reasoning_effort).toBe("low");
+    expect(geminiVisionBody.reasoning_effort).toBe("low");
+    expect(geminiVisionBody.max_tokens).toBe(2048);
+    expect(cloudVisionBody.reasoning_effort).toBeUndefined();
+    expect(cloudVisionBody.max_tokens).toBe(300);
   });
 });

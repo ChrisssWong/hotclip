@@ -124,6 +124,13 @@ export const LLM_PRESET_LIST: LlmPreset[] = [
     keyUrl: "https://platform.openai.com/api-keys",
   },
   {
+    id: "gemini",
+    label: "Google Gemini 官方",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    model: "gemini-3.5-flash-lite",
+    keyUrl: "https://aistudio.google.com/apikey",
+  },
+  {
     id: "ollama",
     label: "Ollama(本地)",
     baseUrl: "http://localhost:11434/v1",

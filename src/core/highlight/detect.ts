@@ -54,9 +54,14 @@ export function clipLengthBounds(length: ClipLength = "standard"): { lo: number;
  * Pollinations' keyless tier serves a reasoning model with a small output
  * budget — without reasoning_effort:"low" it spends every token thinking and
  * returns empty content. Scoped to that host; real OpenAI rejects the param.
+ * Google Gemini's OpenAI-compatible endpoint maps reasoning_effort:"low" to
+ * thinking_level:"low" (Gemini 3/4) / thinking_budget:1024 (Gemini 2.5),
+ * keeping structured highlight detection fast and within max_tokens.
  */
 export function extraParams(baseUrl: string): Record<string, unknown> {
-  return /pollinations\.ai/i.test(baseUrl) ? { reasoning_effort: "low" } : {};
+  return /pollinations\.ai|generativelanguage\.googleapis\.com/i.test(baseUrl)
+    ? { reasoning_effort: "low" }
+    : {};
 }
 
 /**
