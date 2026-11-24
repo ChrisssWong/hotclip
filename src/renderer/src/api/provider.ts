@@ -665,6 +665,53 @@ const browserMock: HotClipApi = {
     const stem = (filePath.split(/[\\/]/).pop() ?? "subtitles").replace(/\.[^.]+$/, "");
     return { path: `/demo/${stem}.srt`, cues: transcript.segments.length };
   },
+  async analyzeBreathCut() {
+    await sleep(300);
+    const durationSec = 180;
+    const hopSec = 1 / 30;
+    const n = Math.floor(durationSec / hopSec);
+    const peaks = Array.from({ length: n }, (_, i) => {
+      const t = i * hopSec;
+      const inGap = (t > 12 && t < 13.4) || (t > 28 && t < 30.2) || (t > 55 && t < 56.5) || t < 2.2 || t > 176.5;
+      if (inGap) return 0.015;
+      return Math.min(1, 0.25 + 0.65 * Math.abs(Math.sin(t * 5.7) * Math.sin(t * 1.9)));
+    });
+    return {
+      durationSec,
+      hopSec,
+      peaks,
+      vadSpans: [
+        { startSec: 2.2, endSec: 12 },
+        { startSec: 13.4, endSec: 28 },
+        { startSec: 30.2, endSec: 55 },
+        { startSec: 56.5, endSec: 176.5 },
+      ],
+    };
+  },
+  async detectJianyingDraftDir() {
+    return "/Movies/JianyingPro/User Data/Projects/com.lveditor.draft";
+  },
+  async exportBreathCutJianying(filePath, segments, options) {
+    await sleep(200);
+    const stem = (filePath.split(/[\\/]/).pop() ?? "HotClip").replace(/\.[^.]+$/, "");
+    const inJianyingDir = Boolean(options?.toDefaultDir);
+    return {
+      path: inJianyingDir
+        ? `/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/${stem}-去气口`
+        : `/demo/${stem}-去气口`,
+      segments: segments.length,
+      inJianyingDir,
+    };
+  },
+  async exportBreathCutFcpxml(filePath, segments) {
+    await sleep(180);
+    const stem = (filePath.split(/[\\/]/).pop() ?? "HotClip").replace(/\.[^.]+$/, "");
+    return { path: `/demo/${stem}-去气口.fcpxml`, segments: segments.length };
+  },
+  async detectBreathCutFillers() {
+    await sleep(120);
+    return [{ key: "filler:1800-1835", startSec: 18, endSec: 18.35, kind: "filler", label: "嗯" }];
+  },
   async detectHighlights(transcript, _llm, _filePath, diarize, prefilter, vision, _length, products, referencePath, _genre, _brief, scan): Promise<DetectHighlightsResult> {
     await sleep(1500);
     // 浏览器预览:给了参考视频就演示一份画像

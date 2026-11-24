@@ -38,6 +38,8 @@ export function PreviewPane({
   onNextCandidate,
   transportCommand,
   compact = false,
+  hideVertical = false,
+  skipRanges,
 }: {
   filePath: string | null;
   hasVideo: boolean;
@@ -49,12 +51,16 @@ export function PreviewPane({
   onNextCandidate: () => void;
   transportCommand?: PreviewTransportCommand | null;
   compact?: boolean;
+  /** 隐藏右侧 9:16 竖屏预览窗与主播分屏条（纯精剪/去气口模式用）。 */
+  hideVertical?: boolean;
+  /** 播放时自动跳过的待剪区间（用于去气口实时试听）。 */
+  skipRanges?: ReadonlyArray<{ startSec: number; endSec: number }>;
 }): React.JSX.Element {
   const t = useT("workbench");
   const mainRef = useRef<HTMLVideoElement>(null);
   const auditionEnd = useRef<number | null>(null);
   const { prefs, setPref } = useRenderPrefs();
-  const splitCamera = hasVideo && prefs.vertical && prefs.gameCameraEnabled;
+  const splitCamera = !hideVertical && hasVideo && prefs.vertical && prefs.gameCameraEnabled;
   const camera = prefs.cameraRegion;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cropRef = useRef<HTMLVideoElement>(null);
@@ -112,6 +118,37 @@ export function PreviewPane({
     auditionEnd.current = null;
     v.currentTime = seekSec;
   }, [seekSec]);
+
+  // 播放态按帧检查跳剪区间（16ms 精度，比 timeupdate 更跟手）
+  const skipRangesRef = useRef(skipRanges);
+  skipRangesRef.current = skipRanges;
+  useEffect(() => {
+    if (!playing) return;
+    let rafId = 0;
+    const tick = (): void => {
+      const v = mainRef.current;
+      const ranges = skipRangesRef.current;
+      if (v && !v.paused && ranges && ranges.length > 0) {
+        const cur = v.currentTime;
+        for (let i = 0; i < ranges.length; i++) {
+          const r = ranges[i];
+          if (cur >= r.startSec - 0.015 && cur < r.endSec - 0.025) {
+            if (r.endSec >= durationSec - 0.05) {
+              v.pause();
+            } else {
+              v.currentTime = r.endSec + 0.005;
+              setNow(r.endSec);
+              onTime(r.endSec);
+            }
+            break;
+          }
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [playing, durationSec, onTime]);
 
   // 竖屏裁切卡与主画面粗同步:漂移超过 0.3s 才校,别抖
   const syncCrop = (): void => {
@@ -196,20 +233,22 @@ export function PreviewPane({
           </span>
         </div>
         {/* 竖屏 9:16 中心裁切:发光描边(主视觉海报的切片卡语言) */}
-        <div className={`monitor-output relative shrink-0 overflow-hidden bg-black ${compact && splitCamera ? "w-[74px]" : "w-[133px]"}`}>
-          {src && splitCamera ? (
-            <canvas ref={canvasRef} width={270} height={480} aria-label={t("gameCamera")} className="h-full w-full object-contain" />
-          ) : src ? (
-            <video ref={cropRef} src={cropSrc} muted onLoadedMetadata={syncCrop} className="h-full w-full object-cover" />
-          ) : (
-            <div className="h-full bg-gradient-to-b from-panel-2 to-panel" />
-          )}
-          <span className="monitor-name pointer-events-none absolute bottom-2 left-2">
-            {t("verticalPreview")}
-          </span>
-        </div>
+        {!hideVertical && (
+          <div className={`monitor-output relative shrink-0 overflow-hidden bg-black ${compact && splitCamera ? "w-[74px]" : "w-[133px]"}`}>
+            {src && splitCamera ? (
+              <canvas ref={canvasRef} width={270} height={480} aria-label={t("gameCamera")} className="h-full w-full object-contain" />
+            ) : src ? (
+              <video ref={cropRef} src={cropSrc} muted onLoadedMetadata={syncCrop} className="h-full w-full object-cover" />
+            ) : (
+              <div className="h-full bg-gradient-to-b from-panel-2 to-panel" />
+            )}
+            <span className="monitor-name pointer-events-none absolute bottom-2 left-2">
+              {t("verticalPreview")}
+            </span>
+          </div>
+        )}
       </div>
-      {hasVideo && prefs.vertical && (
+      {!hideVertical && hasVideo && prefs.vertical && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-mut">
           <label className="inline-flex items-center gap-1.5">
             <input type="checkbox" checked={prefs.gameCameraEnabled} onChange={(e) => setPref({ gameCameraEnabled: e.target.checked })} />

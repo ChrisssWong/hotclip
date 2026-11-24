@@ -908,6 +908,23 @@ export interface HotClipApi {
   exportClips: (filePath: string, clips: HighlightCandidate[], options?: ExportOptions) => Promise<ExportedClip[]>;
   /** Export full original transcript directly to a standalone UTF-8 .srt file without video encoding. */
   exportSrtOnly: (filePath: string, transcript: Transcript) => Promise<{ path: string; cues: number } | null>;
+  /** 免转写分析全片音频峰值轨与 Silero VAD 人声区间（供「去气口」模式使用）。 */
+  analyzeBreathCut: (filePath: string) => Promise<import("./silence-cut").SilenceAnalysisData>;
+  /** 探测本机剪映专业版默认草稿目录；不存在返回 null。 */
+  detectJianyingDraftDir: () => Promise<string | null>;
+  /** 秒出无损剪映专业版草稿（纯保留段，零重编码）。 */
+  exportBreathCutJianying: (
+    filePath: string,
+    segments: import("./silence-cut").TimeSpan[],
+    options?: { toDefaultDir?: boolean; outDir?: string }
+  ) => Promise<{ path: string; segments: number; inJianyingDir: boolean } | null>;
+  /** 秒出 Final Cut Pro 无损 FCPXML v1.10 工程文件。 */
+  exportBreathCutFcpxml: (
+    filePath: string,
+    segments: import("./silence-cut").TimeSpan[]
+  ) => Promise<{ path: string; segments: number } | null>;
+  /** 从可选转写中提取口头禅/口吃候选剪除区间，叠加到去气口波形图。 */
+  detectBreathCutFillers: (transcript: Transcript) => Promise<import("./silence-cut").BreathCutExtraCut[]>;
   /** Subscribe to per-clip export progress; returns an unsubscribe function. */
   onExportProgress: (cb: (p: ExportProgressEvent) => void) => () => void;
   /** 取消进行中的导出(会中断正在跑的 ffmpeg;已完成的切片保留)。 */

@@ -264,7 +264,9 @@ export default function App(): React.JSX.Element {
   const tp = useT("projects");
   const { locale, setLocale } = useLocaleStore();
   const { prefs, setPref } = useRenderPrefs();
-  const roughCutMode = prefs.workflowMode === "roughcut";
+  const workflowMode = prefs.workflowMode;
+  const roughCutMode = workflowMode === "roughcut";
+  const breathCutMode = workflowMode === "breathcut";
   const session = useSession();
   const { file, transcript, candidates, detecting, exporting, settingsOpen, auto } = session;
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -508,21 +510,31 @@ export default function App(): React.JSX.Element {
         {/* 管线状态:替代三步条,只报状态不锁路径 */}
         {file && (
           <nav className="pipeline-nav" style={noDrag}>
-            <PipeChip label={t("pipeTranscribe")} state={transcript ? "done" : "busy"} />
-            {roughCutMode ? (
-              <PipeChip label={t("pipeRoughCut")} state={transcript ? "done" : "idle"} />
+            {breathCutMode ? (
+              <>
+                <PipeChip label={t("pipeAudioAnalyze")} state="done" />
+                <PipeChip label={t("pipeBreathCut")} state="done" />
+                <PipeChip label={t("pipeExport")} state={exporting ? "busy" : "idle"} />
+              </>
             ) : (
-              <PipeChip
-                label={t("pipeDetect")}
-                state={candidates ? "done" : detecting ? "busy" : "idle"}
-                extra={candidates ? t("pipeCandidates", { n: candidates.length }) : undefined}
-              />
+              <>
+                <PipeChip label={t("pipeTranscribe")} state={transcript ? "done" : "busy"} />
+                {roughCutMode ? (
+                  <PipeChip label={t("pipeRoughCut")} state={transcript ? "done" : "idle"} />
+                ) : (
+                  <PipeChip
+                    label={t("pipeDetect")}
+                    state={candidates ? "done" : detecting ? "busy" : "idle"}
+                    extra={candidates ? t("pipeCandidates", { n: candidates.length }) : undefined}
+                  />
+                )}
+                <PipeChip label={t("pipeExport")} state={exporting ? "busy" : "idle"} />
+              </>
             )}
-            <PipeChip label={t("pipeExport")} state={exporting ? "busy" : "idle"} />
           </nav>
         )}
         <div className="flex shrink-0 items-center gap-2" style={noDrag}>
-          {/* 工作流模式切换:切片模式 vs 精剪字幕(免AI、原画幅、文字删句+剪气口+SRT) */}
+          {/* 工作流模式切换:切片模式 | 精剪字幕 | 去气口(免转写纯波形精剪) */}
           <div
             role="group"
             title={t("workflowModeHint")}
@@ -530,11 +542,11 @@ export default function App(): React.JSX.Element {
           >
             <button
               type="button"
-              aria-pressed={!roughCutMode}
+              aria-pressed={workflowMode === "clip"}
               onClick={() => {
-                if (roughCutMode) setPref({ workflowMode: "clip" });
+                if (workflowMode !== "clip") setPref({ workflowMode: "clip" });
               }}
-              className={`rounded px-2 py-1 transition-colors ${!roughCutMode ? "bg-ember/15 text-ember" : "text-mut hover:text-fg"}`}
+              className={`rounded px-2 py-1 transition-colors ${workflowMode === "clip" ? "bg-ember/15 text-ember" : "text-mut hover:text-fg"}`}
             >
               {t("workflowClip")}
             </button>
@@ -551,6 +563,19 @@ export default function App(): React.JSX.Element {
             >
               {t("workflowRoughCut")}
             </button>
+            <button
+              type="button"
+              aria-pressed={breathCutMode}
+              onClick={() => {
+                if (!breathCutMode) {
+                  session.setAuto(false);
+                  setPref({ workflowMode: "breathcut" });
+                }
+              }}
+              className={`rounded px-2 py-1 transition-colors ${breathCutMode ? "bg-ember/15 text-ember" : "text-mut hover:text-fg"}`}
+            >
+              {t("workflowBreathCut")}
+            </button>
           </div>
           {update && (
             <button
@@ -563,7 +588,7 @@ export default function App(): React.JSX.Element {
               {tc("updateChip", { v: update.latest })}
             </button>
           )}
-          {file && !roughCutMode && !auto && !exporting && (
+          {file && workflowMode === "clip" && !auto && !exporting && (
             <button
               type="button"
               title={th("autoRunHint")}

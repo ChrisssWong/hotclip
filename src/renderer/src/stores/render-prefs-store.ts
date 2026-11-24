@@ -15,8 +15,8 @@ import { episodeStructure, type EpisodeStructure } from "../../../shared/episode
 
 const STORAGE_KEY = "hotclip-render-prefs";
 
-/** 工作流模式：clip=短视频切片（AI找爆点+竖屏），roughcut=整片原画幅精剪+字幕（免AI）。 */
-export type WorkflowMode = "clip" | "roughcut";
+/** 工作流模式：clip=短视频切片（AI找爆点+竖屏），roughcut=整片原画幅精剪+字幕（免AI），breathcut=纯去气口（免转写波形精剪，不涉及字幕）。 */
+export type WorkflowMode = "clip" | "roughcut" | "breathcut";
 
 export interface RenderPrefs {
   workflowMode: WorkflowMode;
@@ -180,7 +180,7 @@ export function normalizeRenderPrefs(p: Partial<RenderPrefs>): RenderPrefs {
   if (!["high", "standard", "compact"].includes(out.quality)) out.quality = "high";
   if (!["keyword", "pop", "minimal", "hormozi", "bubble", "karaoke", "none"].includes(out.captionStyle)) out.captionStyle = "keyword";
   if (!["keyword", "pop", "minimal", "hormozi", "bubble", "karaoke", "none"].includes(out.roughCutCaptionStyle)) out.roughCutCaptionStyle = "none";
-  if (out.workflowMode !== "clip" && out.workflowMode !== "roughcut") out.workflowMode = "clip";
+  if (out.workflowMode !== "clip" && out.workflowMode !== "roughcut" && out.workflowMode !== "breathcut") out.workflowMode = "clip";
   if (!["off", "volume", "premium"].includes(out.aiCover)) out.aiCover = "off";
   if (!["basic", "smart"].includes(out.denoiseMode)) out.denoiseMode = "basic";
   out.episode = episodeStructure(out.episode) ?? null;

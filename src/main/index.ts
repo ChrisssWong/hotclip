@@ -48,6 +48,14 @@ import { extractFilmstrip } from "@core/filmstrip";
 import { collectVoiceEmotionSignal } from "@core/voice-emotion";
 import { checkForUpdate } from "@core/update-check";
 import { checkSelfUpdateCapability, installMacSelfUpdate } from "@core/self-update";
+import {
+  analyzeBreathCutAudio,
+  detectJianyingDraftRoot,
+  extractFillerExtraCuts,
+  writeBreathCutFcpxml,
+  writeBreathCutJianyingDraft,
+} from "@core/breath-cut-service";
+import type { TimeSpan } from "../shared/silence-cut";
 import { clipOutDir } from "@core/appenv";
 import { defaultModelsRoot, readAppSettings, resolveModelsRoot, writeAppSettings } from "@core/app-settings";
 import { inspectModels, moveModelsDir } from "@core/models-inventory";
@@ -1027,6 +1035,79 @@ ipcMain.handle("hotclip:export-srt-only", async (_event, filePath: unknown, tran
   if (result.canceled || !result.filePath) return null;
   await writeFile(result.filePath, srt, "utf8");
   return { path: result.filePath, cues: lines.length };
+});
+
+// ---- 「去气口」免转写声学分析与无损工程导出（剪映草稿 / Final Cut Pro FCPXML） ----
+ipcMain.handle("hotclip:breath-cut-analyze", async (_event, filePath: unknown) => {
+  if (typeof filePath !== "string" || !filePath.trim()) {
+    throw new Error("去气口分析需要有效的媒体文件路径");
+  }
+  return analyzeBreathCutAudio(filePath, modelsRoot());
+});
+
+ipcMain.handle("hotclip:breath-cut-jianying-dir", async () => detectJianyingDraftRoot());
+
+ipcMain.handle(
+  "hotclip:breath-cut-export-jianying",
+  async (_event, filePath: unknown, segments: unknown, options: unknown) => {
+    if (typeof filePath !== "string" || !filePath.trim()) {
+      throw new Error("缺少源媒体路径");
+    }
+    const list = Array.isArray(segments) ? (segments as TimeSpan[]) : [];
+    const opts = (options ?? {}) as { toDefaultDir?: boolean; outDir?: string };
+    const detectedDir = detectJianyingDraftRoot();
+
+    let targetParentDir: string | null = null;
+    let inJianyingDir = false;
+
+    if (opts.toDefaultDir && detectedDir) {
+      targetParentDir = detectedDir;
+      inJianyingDir = true;
+    } else if (opts.outDir && opts.outDir.trim()) {
+      targetParentDir = opts.outDir.trim();
+    } else {
+      const picked = await dialog.showOpenDialog({
+        title: "选择剪映草稿保存目录",
+        defaultPath: detectedDir ?? dirname(filePath),
+        properties: ["openDirectory", "createDirectory"],
+      });
+      if (picked.canceled || picked.filePaths.length === 0) return null;
+      targetParentDir = picked.filePaths[0];
+      inJianyingDir = Boolean(detectedDir && targetParentDir === detectedDir);
+    }
+
+    const written = await writeBreathCutJianyingDraft({
+      filePath,
+      segments: list,
+      targetParentDir,
+    });
+    return { ...written, inJianyingDir };
+  }
+);
+
+ipcMain.handle("hotclip:breath-cut-export-fcpxml", async (_event, filePath: unknown, segments: unknown) => {
+  if (typeof filePath !== "string" || !filePath.trim()) {
+    throw new Error("缺少源媒体路径");
+  }
+  const list = Array.isArray(segments) ? (segments as TimeSpan[]) : [];
+  const stem = sanitizeFilename(basename(filePath, extname(filePath)), "HotClip");
+  const picked = await dialog.showSaveDialog({
+    title: "导出 Final Cut Pro 工程（FCPXML）",
+    defaultPath: join(dirname(filePath), `${stem}-去气口.fcpxml`),
+    filters: [{ name: "Final Cut Pro XML", extensions: ["fcpxml"] }],
+  });
+  if (picked.canceled || !picked.filePath) return null;
+  return writeBreathCutFcpxml({
+    filePath,
+    segments: list,
+    outputFilePath: picked.filePath,
+  });
+});
+
+ipcMain.handle("hotclip:breath-cut-detect-fillers", async (_event, transcript: unknown) => {
+  const t = transcript as Transcript | null | undefined;
+  if (!t || !Array.isArray(t.segments)) return [];
+  return extractFillerExtraCuts(t);
 });
 
 /** 一条候选实际要用的词表:拼接片只取落在各段内的词,单段照旧按区间取。 */

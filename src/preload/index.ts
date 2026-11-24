@@ -42,6 +42,13 @@ const api: HotClipApi = {
     ipcRenderer.invoke("hotclip:detect-highlights", transcript, llm, filePath, diarize, prefilter, vision, length, products, referencePath, genre, brief, scan, maxClips),
   exportClips: (filePath, clips, options) => ipcRenderer.invoke("hotclip:export-clips", filePath, clips, options),
   exportSrtOnly: (filePath, transcript) => ipcRenderer.invoke("hotclip:export-srt-only", filePath, transcript),
+  analyzeBreathCut: (filePath) => ipcRenderer.invoke("hotclip:breath-cut-analyze", filePath),
+  detectJianyingDraftDir: () => ipcRenderer.invoke("hotclip:breath-cut-jianying-dir"),
+  exportBreathCutJianying: (filePath, segments, options) =>
+    ipcRenderer.invoke("hotclip:breath-cut-export-jianying", filePath, segments, options),
+  exportBreathCutFcpxml: (filePath, segments) =>
+    ipcRenderer.invoke("hotclip:breath-cut-export-fcpxml", filePath, segments),
+  detectBreathCutFillers: (transcript) => ipcRenderer.invoke("hotclip:breath-cut-detect-fillers", transcript),
   onExportProgress: (cb) => {
     const listener = (_e: IpcRendererEvent, p: ExportProgressEvent): void => cb(p);
     ipcRenderer.on("hotclip:export-progress", listener);

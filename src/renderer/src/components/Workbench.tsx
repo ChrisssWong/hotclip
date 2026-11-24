@@ -20,6 +20,8 @@ import { TranscriptPanel } from "./workbench/TranscriptPanel";
 import { Inspector } from "./workbench/Inspector";
 import { ExportBar } from "./workbench/ExportBar";
 import { RoughCutBar } from "./workbench/RoughCutBar";
+import { BreathCutWorkspace } from "./workbench/BreathCutWorkspace";
+import type { TimeSpan } from "../../../shared/silence-cut";
 import { ExportPanel } from "./workbench/ExportPanel";
 import { TranscribeView } from "./TranscribeView";
 import { ExportView } from "./ExportView";
@@ -201,6 +203,7 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
   const atlasReady = /atlascloud\.ai/i.test(config.baseUrl ?? "") && Boolean(config.apiKey);
   const durationSec = transcript?.durationSec || file?.durationSec || 0;
   const roughCutMode = prefs.workflowMode === "roughcut";
+  const breathCutMode = prefs.workflowMode === "breathcut";
   const activeTab = roughCutMode ? "transcript" : tab;
 
   const seek = useCallback((sec: number): void => {
@@ -209,10 +212,10 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
   }, []);
 
   // 首次自动检测:转写完成 + LLM 就绪 + 还没有候选 → 跑一轮(每份逐句稿只触发一次)
-  // 精剪字幕模式下完全跳过 AI 找爆点，免配置 LLM、零云端消耗。
+  // 精剪字幕与去气口模式下完全跳过 AI 找爆点，免配置 LLM、零云端消耗。
   const detectedFor = useRef<unknown>(null);
   useEffect(() => {
-    if (roughCutMode) return;
+    if (roughCutMode || breathCutMode) return;
     if (!transcript || candidates !== null || detecting || !llmReady) return;
     // Importing reviewed subtitles first opens the transcript. AI analysis is
     // an explicit next step; selecting a subtitle file must not spend LLM quota.
@@ -220,12 +223,12 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
     if (detectedFor.current === transcript) return;
     detectedFor.current = transcript;
     void run();
-  }, [roughCutMode, transcript, candidates, detecting, llmReady, auto, run]);
+  }, [roughCutMode, breathCutMode, transcript, candidates, detecting, llmReady, auto, run]);
 
   // 托管:候选落地即按当前偏好把「建议发」全部出片
   const autoExported = useRef(false);
   useEffect(() => {
-    if (roughCutMode || !auto || autoExported.current || !candidates) return;
+    if (roughCutMode || breathCutMode || !auto || autoExported.current || !candidates) return;
     const publishable = candidates.filter((c) => c.recommended && (c.gate === undefined || c.gate === "publish"));
     if (publishable.length === 0) return;
     autoExported.current = true;
@@ -372,6 +375,68 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
     });
   }, [durationSec, prefs, config, brandState]);
 
+  const startBreathCutExport = useCallback((keptSegments: TimeSpan[]): void => {
+    const s = useSession.getState();
+    if (!s.file || keptSegments.length === 0) return;
+    const first = keptSegments[0];
+    const last = keptSegments[keptSegments.length - 1];
+    const baseName = `${displayName(s.file.path)}-去气口`;
+    const clip: HighlightCandidate = {
+      id: 1,
+      startSec: first.startSec,
+      endSec: last.endSec,
+      ...(keptSegments.length > 1 ? { pieces: keptSegments.map((seg) => ({ startSec: seg.startSec, endSec: seg.endSec })) } : {}),
+      text: "",
+      title: baseName,
+      hook: "",
+      score: 100,
+      reason: "breathcut",
+      boundary: "exact",
+      keywords: [],
+      recommended: true,
+      reviewNote: "",
+      manualBounds: true,
+    };
+    const base = buildRenderToggles({ prefs, config, brandState, diarize: false, transcript: null, atlasReady: false });
+    s.setExporting({
+      clips: [clip],
+      options: {
+        ...base,
+        vertical: false,
+        gameCamera: undefined,
+        captionStyle: "none",
+        jumpCut: false,
+        cleanFillers: false,
+        cutRetakes: false,
+        preciseAlign: false,
+        trimUi: false,
+        titleCard: false,
+        openingHook: false,
+        coldOpen: false,
+        flashForward: false,
+        autoZoom: false,
+        autoEnhance: false,
+        sfx: false,
+        bgmPath: undefined,
+        brand: undefined,
+        alsoLandscape: false,
+        compilation: false,
+        subtitleFile: false,
+        timeline: false,
+        jianyingDraft: false,
+        translate: undefined,
+        publishCopy: undefined,
+        variants: undefined,
+        aiCover: undefined,
+        publishPack: undefined,
+        seriesPack: false,
+        aigcLabel: false,
+        evidencePack: false,
+        muteTerms: undefined,
+      },
+    });
+  }, [prefs, config, brandState]);
+
   if (!file) return <></>;
 
   return (
@@ -379,6 +444,17 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
       <div className="editing-panels flex min-h-0 flex-1">
         <LeftRail onOpenWatch={() => setShowWatch(true)} />
 
+        {breathCutMode ? (
+          <BreathCutWorkspace
+            filePath={file.path}
+            hasVideo={file.hasVideo}
+            durationSec={file.durationSec}
+            defaultOutDir={defaultOutDir}
+            transportCommand={transportCommand}
+            onExportMp4={startBreathCutExport}
+          />
+        ) : (
+        <>
         {/* 中央 */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5 overflow-y-auto p-3">
           {!transcript ? (
@@ -554,16 +630,18 @@ export function Workbench({ onCloseProject, onNext }: { onCloseProject: () => vo
         </div>
 
         {transcript && activeTab !== "transcript" && <Inspector transcript={transcript} onRedetect={() => void run()} onOpenReview={setReviewId} />}
+        </>
+        )}
       </div>
 
-      {transcript && roughCutMode ? (
+      {!breathCutMode && (transcript && roughCutMode ? (
         <RoughCutBar defaultOutDir={defaultOutDir} durationSec={durationSec} onExportVideo={startRoughCutExport} />
       ) : transcript && candidates && candidates.length > 0 ? (
         <ExportBar defaultOutDir={defaultOutDir} onExport={startExport} onOpenPanel={() => setShowExportPanel(true)} />
-      ) : null}
+      ) : null)}
 
       {/* ---- 导出进行中:中央覆盖层(候选保留在 store,出完直接回来) ---- */}
-      {exporting && transcript && (
+      {exporting && (transcript || breathCutMode) && (
         <div className="absolute inset-0 z-40 flex flex-col items-center overflow-y-auto bg-ink/95 pt-[10vh] backdrop-blur-sm">
           <ExportView
             filePath={file.path}

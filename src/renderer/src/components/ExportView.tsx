@@ -33,7 +33,7 @@ export function ExportView({
   filePath: string;
   clips: HighlightCandidate[];
   options: RenderToggles;
-  transcript: Transcript;
+  transcript: Transcript | null;
   onBack: () => void;
   onRestart: () => void;
 }): React.JSX.Element {
@@ -66,7 +66,7 @@ export function ExportView({
       // Sidecars and speech edits need the same words as burned captions.
       .exportClips(filePath, clips, {
         ...options,
-        transcript: exportNeedsTranscript(options) ? transcript : undefined,
+        transcript: exportNeedsTranscript(options) && transcript ? transcript : undefined,
       })
       .then((value) => { if (id === requestId.current) setResults(value); })
       .catch((e) => { if (id === requestId.current) setError(e instanceof Error ? e.message : String(e)); })
