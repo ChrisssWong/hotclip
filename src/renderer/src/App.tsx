@@ -32,7 +32,8 @@ import { Workbench } from "./components/Workbench";
 import { SettingsView } from "./components/SettingsView";
 import { WatchFolderModal } from "./components/WatchFolderModal";
 import { ProjectLibraryModal } from "./components/ProjectLibraryModal";
-import type { ProjectSummary, UpdateInfo, UrlImportProgressEvent } from "../../shared/api-types";
+import { SelfUpdateModal } from "./components/SelfUpdateModal";
+import type { ProjectSummary, SelfUpdateCapability, UpdateInfo, UrlImportProgressEvent } from "../../shared/api-types";
 import "./app.css";
 import "./workstation.css";
 
@@ -267,6 +268,8 @@ export default function App(): React.JSX.Element {
   const session = useSession();
   const { file, transcript, candidates, detecting, exporting, settingsOpen, auto } = session;
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [updateCap, setUpdateCap] = useState<SelfUpdateCapability>({ supported: false });
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [restored, setRestored] = useState(false);
   const [checkpointWarning, setCheckpointWarning] = useState(false);
@@ -451,7 +454,13 @@ export default function App(): React.JSX.Element {
     void getApi()
       .checkUpdate()
       .then((u) => {
-        if (u?.hasUpdate) setUpdate(u);
+        if (u?.hasUpdate) {
+          setUpdate(u);
+          void getApi()
+            .selfUpdateCanInstall()
+            .then((cap) => setUpdateCap(cap))
+            .catch(() => {});
+        }
       })
       .catch(() => {});
   }, []);
@@ -546,7 +555,7 @@ export default function App(): React.JSX.Element {
           {update && (
             <button
               type="button"
-              onClick={() => getApi().openUrl(update.url)}
+              onClick={() => setShowUpdateModal(true)}
               title={tc("updateHint", { v: update.latest })}
               className="flame-gradient flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold text-white"
             >
@@ -610,6 +619,13 @@ export default function App(): React.JSX.Element {
           onRelink={relinkSavedProject}
           onRename={renameSavedProject}
           onDelete={deleteSavedProject}
+        />
+      )}
+      {showUpdateModal && update && (
+        <SelfUpdateModal
+          update={update}
+          capability={updateCap}
+          onClose={() => setShowUpdateModal(false)}
         />
       )}
       {restored && (

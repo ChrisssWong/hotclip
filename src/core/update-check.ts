@@ -5,8 +5,9 @@
  * 永不打扰。纯函数(版本比对/响应解析)可单测;fetch 注入。
  */
 
-export const RELEASES_URL = "https://github.com/xixihhhh/hotclip/releases/latest";
-const LATEST_API = "https://api.github.com/repos/xixihhhh/hotclip/releases/latest";
+export const RELEASES_REPO = "ChrisssWong/hotclip";
+export const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases/latest`;
+const LATEST_API = `https://api.github.com/repos/${RELEASES_REPO}/releases/latest`;
 
 /** "v1.2.3" / "1.2.3" → [1,2,3];无法解析返回 null。 */
 export function parseVersion(v: string): [number, number, number] | null {

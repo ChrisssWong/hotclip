@@ -3,7 +3,7 @@
  * The renderer never touches ipcRenderer — only this typed bridge.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { HotClipApi, TranscribeProgressEvent, ExportProgressEvent, UrlImportProgressEvent, WatchEvent, DiagnosticsProgressEvent } from "../shared/api-types";
+import type { HotClipApi, TranscribeProgressEvent, ExportProgressEvent, UrlImportProgressEvent, WatchEvent, DiagnosticsProgressEvent, SelfUpdateProgress } from "../shared/api-types";
 
 const api: HotClipApi = {
   selectMedia: () => ipcRenderer.invoke("hotclip:select-media"),
@@ -101,6 +101,14 @@ const api: HotClipApi = {
     return () => ipcRenderer.removeListener("hotclip:watch-event", listener);
   },
   checkUpdate: () => ipcRenderer.invoke("hotclip:check-update"),
+  selfUpdateCanInstall: () => ipcRenderer.invoke("hotclip:self-update-can-install"),
+  selfUpdateInstall: (version) => ipcRenderer.invoke("hotclip:self-update-install", version),
+  onSelfUpdateProgress: (cb) => {
+    const listener = (_e: IpcRendererEvent, p: SelfUpdateProgress): void => cb(p);
+    ipcRenderer.on("hotclip:self-update-progress", listener);
+    return () => ipcRenderer.removeListener("hotclip:self-update-progress", listener);
+  },
+  cancelSelfUpdate: () => ipcRenderer.send("hotclip:self-update-cancel"),
   openUrl: (url) => ipcRenderer.send("hotclip:open-url", url),
   glossaryGet: () => ipcRenderer.invoke("hotclip:glossary-get"),
   glossarySet: (entries) => ipcRenderer.invoke("hotclip:glossary-set", entries),

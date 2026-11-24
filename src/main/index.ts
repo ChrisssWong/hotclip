@@ -47,6 +47,7 @@ import { loudnessCurve, motionCurve } from "@core/signals";
 import { extractFilmstrip } from "@core/filmstrip";
 import { collectVoiceEmotionSignal } from "@core/voice-emotion";
 import { checkForUpdate } from "@core/update-check";
+import { checkSelfUpdateCapability, installMacSelfUpdate } from "@core/self-update";
 import { clipOutDir } from "@core/appenv";
 import { defaultModelsRoot, readAppSettings, resolveModelsRoot, writeAppSettings } from "@core/app-settings";
 import { inspectModels, moveModelsDir } from "@core/models-inventory";
@@ -1574,12 +1575,49 @@ ipcMain.handle("hotclip:webhook-status", async () => ({
   dir: webhookInfo?.dir ?? null,
 }));
 
-// ---- 新版本检查:启动后渲染层问一次,失败静默 ----
+// ---- 新版本检查与 macOS Ed25519 签名自更新 ----
 let updateCache: UpdateInfo | null | undefined;
 ipcMain.handle("hotclip:check-update", async () => {
   if (updateCache !== undefined) return updateCache;
   updateCache = await checkForUpdate(app.getVersion());
   return updateCache;
+});
+
+let selfUpdateAbort: AbortController | null = null;
+ipcMain.handle("hotclip:self-update-can-install", async () => {
+  const cap = checkSelfUpdateCapability({ isPackaged: app.isPackaged });
+  return { supported: cap.supported, reason: cap.reason };
+});
+
+ipcMain.handle("hotclip:self-update-install", async (event, version: unknown) => {
+  if (typeof version !== "string" || !version.trim()) {
+    throw new Error("缺少有效的目标版本号");
+  }
+  if (selfUpdateAbort) {
+    throw new Error("已有更新任务正在进行中");
+  }
+  const ac = new AbortController();
+  selfUpdateAbort = ac;
+  try {
+    await installMacSelfUpdate({
+      version,
+      isPackaged: app.isPackaged,
+      signal: ac.signal,
+      onProgress: (p) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send("hotclip:self-update-progress", p);
+        }
+      },
+    });
+    // 给 IPC 响应留出短暂缓冲，随后退出旧进程让脱离脚本原子替换并重启
+    setTimeout(() => app.quit(), 180);
+  } finally {
+    if (selfUpdateAbort === ac) selfUpdateAbort = null;
+  }
+});
+
+ipcMain.on("hotclip:self-update-cancel", () => {
+  selfUpdateAbort?.abort();
 });
 
 // ---- 热词词表:错词→对词,转写后自动应用(桌面/MCP/录播监听共用一份) ----
@@ -1588,9 +1626,13 @@ ipcMain.handle("hotclip:glossary-set", async (_event, entries: unknown) => {
   await saveGlossary(app.getPath("userData"), Array.isArray(entries) ? entries : []);
 });
 
-// 外链只放行本项目 GitHub(防任意 URL 注入系统浏览器)
+// 外链只放行本项目 GitHub 仓库(防任意 URL 注入系统浏览器)
+const ALLOWED_EXTERNAL_PREFIXES = [
+  "https://github.com/ChrisssWong/hotclip",
+  "https://github.com/xixihhhh/hotclip",
+];
 ipcMain.on("hotclip:open-url", (_event, url: unknown) => {
-  if (typeof url === "string" && url.startsWith("https://github.com/xixihhhh/hotclip")) {
+  if (typeof url === "string" && ALLOWED_EXTERNAL_PREFIXES.some((prefix) => url.startsWith(prefix))) {
     void shell.openExternal(url);
   }
 });

@@ -30,11 +30,13 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
 mac:
+  icon: build/icon-mac.icns
   identity: "-"
   hardenedRuntime: false
   notarize: false
   target:
     - dmg
+    - zip
   artifactName: HotClip-${version}-mac-${arch}.${ext}
   category: public.app-category.video
 linux:

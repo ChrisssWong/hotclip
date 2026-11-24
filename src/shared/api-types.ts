@@ -995,6 +995,14 @@ export interface HotClipApi {
   onWatchEvent: (cb: (e: WatchEvent) => void) => () => void;
   /** 查一次新版本;断网/失败返回 null(fail-open,绝不打扰)。 */
   checkUpdate: () => Promise<UpdateInfo | null>;
+  /** 检查当前环境是否支持应用内签名自更新（目前支持 macOS arm64 已安装的 HotClip.app）。 */
+  selfUpdateCanInstall: () => Promise<SelfUpdateCapability>;
+  /** 下载并校验指定版本的 Ed25519 签名更新包，原地替换并重启应用。 */
+  selfUpdateInstall: (version: string) => Promise<void>;
+  /** 订阅应用内自更新进度事件；返回退订函数。 */
+  onSelfUpdateProgress: (cb: (p: SelfUpdateProgress) => void) => () => void;
+  /** 取消正在下载/解压中的自更新。 */
+  cancelSelfUpdate: () => void;
   /** 打开外部链接(仅白名单域,当前只放行本项目 GitHub)。 */
   openUrl: (url: string) => void;
   /** 读热词词表(持久化在本地,转写后自动应用)。 */
@@ -1027,4 +1035,25 @@ export interface UpdateInfo {
   latest: string;
   hasUpdate: boolean;
   url: string;
+}
+
+/** 应用内自更新能力检查结果。 */
+export interface SelfUpdateCapability {
+  supported: boolean;
+  reason?: string;
+}
+
+export type SelfUpdateStage =
+  | "checking"
+  | "verifying"
+  | "downloading"
+  | "extracting"
+  | "installing"
+  | "restarting";
+
+export interface SelfUpdateProgress {
+  stage: SelfUpdateStage;
+  fraction?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
 }

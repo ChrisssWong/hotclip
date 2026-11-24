@@ -640,6 +640,16 @@ const browserMock: HotClipApi = {
   async checkUpdate() {
     return null; // 浏览器预览不做更新提示
   },
+  async selfUpdateCanInstall() {
+    return { supported: false, reason: "浏览器预览模式不支持应用内自更新" };
+  },
+  async selfUpdateInstall() {
+    throw new Error("浏览器预览模式不支持应用内自更新");
+  },
+  onSelfUpdateProgress() {
+    return () => {};
+  },
+  cancelSelfUpdate() {},
   async glossaryGet() {
     await sleep(80);
     return mockGlossaryLoad();

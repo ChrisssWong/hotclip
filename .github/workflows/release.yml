@@ -23,8 +23,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest # arm64 dmg
-            args: --mac dmg --arm64
+          - os: macos-latest # arm64 dmg + zip (for signed in-app self-update)
+            args: --mac dmg zip --arm64
           - os: windows-latest # nsis installer + portable zip
             args: --win
           - os: ubuntu-latest # experimental AppImage (issue #7)
@@ -102,6 +102,7 @@ jobs:
           required_patterns=(
             "assets/*.dmg"
             "assets/*.dmg.blockmap"
+            "assets/*-mac-arm64.zip"
             "assets/*.exe"
             "assets/*.exe.blockmap"
             "assets/*.zip"
@@ -117,6 +118,15 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Generate signed update manifest and checksums
+        shell: bash
+        env:
+          HOTCLIP_UPDATER_PRIVATE_KEY: ${{ secrets.HOTCLIP_UPDATER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          package_version="$(node -p "require('./package.json').version")"
+          node tools/sign-update-manifest.mjs --assets-dir assets --version "$package_version" --repo "$GITHUB_REPOSITORY"
 
       - name: Stage assets and publish release
         shell: bash
