@@ -38,23 +38,30 @@ export interface RationalFrameDuration {
   fpsTag: string;
 }
 
-/** 将浮点帧率映射为 Final Cut Pro 认可的标准有理数 frameDuration。 */
+/** 将浮点帧率映射为 Final Cut Pro 认可的标准有理数 frameDuration（按最近距离匹配，避免 60 被 59.94 抢占）。 */
 export function resolveFrameDuration(fps: number): RationalFrameDuration {
   const f = Number.isFinite(fps) && fps > 0 ? fps : 30;
   const presets: Array<{ match: number; tol: number; num: number; den: number; fpsTag: string }> = [
-    { match: 23.976, tol: 0.05, num: 1001, den: 24000, fpsTag: "2398" },
-    { match: 24, tol: 0.05, num: 100, den: 2400, fpsTag: "24" },
-    { match: 25, tol: 0.05, num: 100, den: 2500, fpsTag: "25" },
-    { match: 29.97, tol: 0.05, num: 1001, den: 30000, fpsTag: "2997" },
-    { match: 30, tol: 0.05, num: 100, den: 3000, fpsTag: "30" },
-    { match: 50, tol: 0.1, num: 100, den: 5000, fpsTag: "50" },
-    { match: 59.94, tol: 0.1, num: 1001, den: 60000, fpsTag: "5994" },
-    { match: 60, tol: 0.1, num: 100, den: 6000, fpsTag: "60" },
+    { match: 23.976, tol: 0.012, num: 1001, den: 24000, fpsTag: "2398" },
+    { match: 24, tol: 0.012, num: 100, den: 2400, fpsTag: "24" },
+    { match: 25, tol: 0.02, num: 100, den: 2500, fpsTag: "25" },
+    { match: 29.97, tol: 0.015, num: 1001, den: 30000, fpsTag: "2997" },
+    { match: 30, tol: 0.015, num: 100, den: 3000, fpsTag: "30" },
+    { match: 50, tol: 0.02, num: 100, den: 5000, fpsTag: "50" },
+    { match: 59.94, tol: 0.025, num: 1001, den: 60000, fpsTag: "5994" },
+    { match: 60, tol: 0.025, num: 100, den: 6000, fpsTag: "60" },
   ];
+  let best: (typeof presets)[number] | null = null;
+  let bestDiff = Infinity;
   for (const p of presets) {
-    if (Math.abs(f - p.match) <= p.tol) {
-      return { num: p.num, den: p.den, fpsTag: p.fpsTag };
+    const diff = Math.abs(f - p.match);
+    if (diff <= p.tol && diff < bestDiff) {
+      best = p;
+      bestDiff = diff;
     }
+  }
+  if (best) {
+    return { num: best.num, den: best.den, fpsTag: best.fpsTag };
   }
   const rounded = Math.max(1, Math.round(f));
   return { num: 100, den: rounded * 100, fpsTag: String(rounded) };

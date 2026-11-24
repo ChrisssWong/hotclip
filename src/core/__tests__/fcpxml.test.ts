@@ -2,11 +2,15 @@ import { describe, it, expect } from "vitest";
 import { buildFcpXml, framesToFcpTime, resolveFrameDuration, secToFrames } from "../fcpxml";
 
 describe("FCPXML v1.10 无损工程生成", () => {
-  it("准确映射 23.976 / 29.97 / 30 / 60 fps 的有理数 frameDuration", () => {
-    expect(resolveFrameDuration(60)).toEqual({ num: 100, den: 6000, fpsTag: "60" });
-    expect(resolveFrameDuration(59.94)).toEqual({ num: 1001, den: 60000, fpsTag: "5994" });
-    expect(resolveFrameDuration(29.97)).toEqual({ num: 1001, den: 30000, fpsTag: "2997" });
+  it("准确映射 23.976 / 24 / 25 / 29.97 / 30 / 50 / 59.94 / 60 fps 且互不串台", () => {
     expect(resolveFrameDuration(23.976)).toEqual({ num: 1001, den: 24000, fpsTag: "2398" });
+    expect(resolveFrameDuration(24)).toEqual({ num: 100, den: 2400, fpsTag: "24" });
+    expect(resolveFrameDuration(25)).toEqual({ num: 100, den: 2500, fpsTag: "25" });
+    expect(resolveFrameDuration(29.97)).toEqual({ num: 1001, den: 30000, fpsTag: "2997" });
+    expect(resolveFrameDuration(30)).toEqual({ num: 100, den: 3000, fpsTag: "30" });
+    expect(resolveFrameDuration(50)).toEqual({ num: 100, den: 5000, fpsTag: "50" });
+    expect(resolveFrameDuration(59.94)).toEqual({ num: 1001, den: 60000, fpsTag: "5994" });
+    expect(resolveFrameDuration(60)).toEqual({ num: 100, den: 6000, fpsTag: "60" });
   });
 
   it("时间值严格对齐帧边界并简化整秒", () => {
