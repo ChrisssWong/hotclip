@@ -208,9 +208,16 @@ export interface DownloadProgress {
   phase?: "download" | "extract";
 }
 
-/** Candidate URLs in retry order: mirrors first (domestic-first), then origin. */
+/**
+ * Candidate URLs in retry order.
+ * 默认仅走官方源直连，避免经由未校验哈希的第三方反代下载模型；
+ * 仅在显式设置 HOTCLIP_USE_MIRRORS=1 且模型配置了 sha256 校验时，才允许镜像回退。
+ */
 export function candidateUrls(asset: ModelAsset): string[] {
-  return [...asset.mirrors.map((m) => `${m}${asset.url}`), ...(asset.altUrls ?? []), asset.url];
+  if (process.env.HOTCLIP_USE_MIRRORS === "1" && asset.sha256) {
+    return [asset.url, ...asset.mirrors.map((m) => `${m}${asset.url}`), ...(asset.altUrls ?? [])];
+  }
+  return [asset.url];
 }
 
 /** Absolute path a model extracts to under the given models root. */

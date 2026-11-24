@@ -181,6 +181,11 @@ export async function startWebhookServer(options: WebhookServerOptions): Promise
       reply(200, "hotclip webhook ready");
       return;
     }
+    if (req.headers.origin) {
+      log("拒绝:不允许来自浏览器的跨站请求");
+      reply(403, "browser origin not allowed");
+      return;
+    }
     const url = new URL(req.url ?? "/", `http://${host}`);
     const header = req.headers["x-hotclip-token"];
     const provided = url.searchParams.get("token") ?? (Array.isArray(header) ? header[0] : header);

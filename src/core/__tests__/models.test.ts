@@ -18,20 +18,35 @@ describe("parseContentRange", () => {
 });
 
 describe("candidateUrls", () => {
-  it("镜像前缀在前、altUrls 居中、主 URL 兜底", () => {
-    const asset: ModelAsset = {
-      id: "x",
-      url: "https://github.com/a/b.tar.bz2",
-      mirrors: ["https://m1/", "https://m2/"],
-      altUrls: ["https://alt/b.tar.bz2"],
-      extractedDir: "x",
-      approxBytes: 1,
-    };
-    expect(candidateUrls(asset)).toEqual([
+  afterEach(() => {
+    delete process.env.HOTCLIP_USE_MIRRORS;
+  });
+
+  const sample: ModelAsset = {
+    id: "x",
+    url: "https://github.com/a/b.tar.bz2",
+    mirrors: ["https://m1/", "https://m2/"],
+    altUrls: ["https://alt/b.tar.bz2"],
+    extractedDir: "x",
+    approxBytes: 1,
+  };
+
+  it("默认仅走官方源直连，不经过第三方反代", () => {
+    expect(candidateUrls(sample)).toEqual(["https://github.com/a/b.tar.bz2"]);
+  });
+
+  it("显式开启镜像但缺少 sha256 时，仍仅走官方源", () => {
+    process.env.HOTCLIP_USE_MIRRORS = "1";
+    expect(candidateUrls(sample)).toEqual(["https://github.com/a/b.tar.bz2"]);
+  });
+
+  it("显式开启镜像且具备 sha256 校验时，官方优先、镜像回退", () => {
+    process.env.HOTCLIP_USE_MIRRORS = "1";
+    expect(candidateUrls({ ...sample, sha256: "a".repeat(64) })).toEqual([
+      "https://github.com/a/b.tar.bz2",
       "https://m1/https://github.com/a/b.tar.bz2",
       "https://m2/https://github.com/a/b.tar.bz2",
       "https://alt/b.tar.bz2",
-      "https://github.com/a/b.tar.bz2",
     ]);
   });
 });

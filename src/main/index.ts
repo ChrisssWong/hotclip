@@ -207,8 +207,16 @@ function createWindow(): void {
   mainWindow.on("ready-to-show", () => mainWindow.show());
 
   // External links open in the system browser, never inside the app shell.
+  // 仅放行 http/https 外链，拦截 file:// 等本地或自定义协议。
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
+    try {
+      const { protocol: scheme } = new URL(details.url);
+      if (scheme === "https:" || scheme === "http:") {
+        void shell.openExternal(details.url);
+      }
+    } catch {
+      /* ignore malformed URLs */
+    }
     return { action: "deny" };
   });
 

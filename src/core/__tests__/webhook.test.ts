@@ -215,6 +215,18 @@ describe("startWebhookServer", () => {
     expect(got).toHaveLength(1);
   });
 
+  it("拒绝携带 Origin 头的浏览器跨站请求(防本地 CSRF)", async () => {
+    const { got, logs, url } = await serve();
+    const res = await post(
+      url,
+      { EventType: "FileClosed", EventData: { RelativePath: "a.flv" } },
+      { origin: "https://evil.example" }
+    );
+    expect(res.status).toBe(403);
+    expect(got).toHaveLength(0);
+    expect(logs.some((l) => l.includes("跨站"))).toBe(true);
+  });
+
   it("GET 探活返回就绪信息(方便用户验证端口通不通)", async () => {
     const { url } = await serve();
     const res = await fetch(url);
